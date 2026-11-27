@@ -56,5 +56,3 @@ flowchart TD
 ## 许可
 
 软件免费提供，按 [PolyForm Noncommercial License 1.0.0](LICENSE) 许可用于非商业用途。第三方组件保留原有许可与声明，详见[第三方说明](THIRD_PARTY_NOTICES.md)。
-
-（桌面安装包的打包流程保留在本地。固件输入和生成的运行资源按资源说明单独准备。）
