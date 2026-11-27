@@ -1,0 +1,103 @@
+{
+  "schema": "sony-resource-sources-v1",
+  "model": "ILCE-7M4",
+  "support_url": "https://www.sony.com/electronics/support/e-mount-body-ilce-7-series/ilce-7m4/downloads",
+  "baseline": {
+    "version": "6.02",
+    "bytes": 757480856,
+    "sha256": "ad6df47a0a93a46336b9920a0d8891d0c766f8c96fa68ebda8685f6c21621188",
+    "plaintext_sha256": "4fd810b8d20ea239e0df01aded90687baef1ca2c8df208a7f58c4989f85799c3",
+    "updater_member": "0400_updater/dev/nflasha1",
+    "updater_bytes": 19377152,
+    "updater_sha256": "696992b67a8a962b9d5f1a5cf17108b1a5fb4e77d1389a359e7e73ac88c6a103",
+    "stock_assets": {
+      "sony-602-initrd.img": {
+        "fat_path": "boot/initrd.img",
+        "bytes": 9097216,
+        "sha256": "2aea454ee676c2019ea44026cb15421756ef0631ef45ce5311d168c0f8b318e5"
+      },
+      "sony-602-p1chksum.bin": {
+        "fat_path": "p1chksum",
+        "bytes": 105,
+        "sha256": "46b171610cc05bffae28eabc4bcdd3f0efb54942fe3c4c7747ea5bc17a0c5fbd"
+      }
+    },
+    "nor_assets": {
+      "bin/bksb.elf": {
+        "bytes": 18568,
+        "sha256": "c14f9fd70302d67f45ab50b3edc130b40d471f3415bc40a20e7a30d7b815ddb9"
+      },
+      "bin/spicom.elf": {
+        "bytes": 14416,
+        "sha256": "83544c8f02e9a55c3ec45dc2a6f141cba8a707b5f16351516dc13c4e7906e9b1"
+      },
+      "bin/ud_cp_firmup.elf": {
+        "bytes": 18544,
+        "sha256": "ea896626a2503f9ab8b90c9506176ffbab7d3b8081a378734d93d7dd410f2c95"
+      },
+      "bin/ud_get_boot_device.elf": {
+        "bytes": 6096,
+        "sha256": "f9b48a5c02a9ccf025a85d0fd8b4ec539379dad58d621c2f3622326d45309e8c"
+      },
+      "bin/ud_get_boot_ext.elf": {
+        "bytes": 6112,
+        "sha256": "072f6ea804f7037546b0cdfc1d908f346715fd7ae4bdee9e931dad63d55a9e71"
+      },
+      "bin/ud_get_data_from_mis.elf": {
+        "bytes": 6152,
+        "sha256": "557029e21eac8b9eccfc410a37d44e2d08b881817b2c6ee01a96779ce832a222"
+      },
+      "bin/ud_init_spi_port_setting.elf": {
+        "bytes": 10232,
+        "sha256": "9f158b469cb9ae8ee2e23d34aab10766d6dedbc8d0a6e08650f44a36962f7649"
+      },
+      "bin/ud_nor_pformat.elf": {
+        "bytes": 10336,
+        "sha256": "065955c5e6f34f622c9d35490bc3bfc84e3daeb6de882cda1cc9a7b63a15f9da"
+      },
+      "bin/ud_spicom_boot.elf": {
+        "bytes": 6136,
+        "sha256": "558f99bca3e3fb25513c642654d582b8589f681ee8632359bff39798da3e8939"
+      },
+      "cp/tomco.txt": {
+        "bytes": 618,
+        "sha256": "d9401e6a7d0cdd85803e2a6823fd9dac0ff186910d82a5671f32fc0a37fc21f1"
+      },
+      "cp/udtrcp.bin": {
+        "bytes": 880944,
+        "sha256": "2c04cf41c63decc8bc9e4ff0441570aaf25a7c50687051716bfdcae69af0ac25"
+      },
+      "loader_nor.tar": {
+        "bytes": 102400,
+        "sha256": "afae0d0054e369924c224cc85b2c2222b0940635786d15b1c570406b495a4a41"
+      }
+    },
+    "loader_member": "0750_nor_loader/loader_nor.tar"
+  },
+  "variants": {
+    "94dbf6d871c1d995": {
+      "version": "2.00",
+      "bytes": 896712088,
+      "sha256": "394ac0daaeb9ce3f6ca0273a18c6af26505770e3b470f70d1d9f062e257bbe88",
+      "U_sha256": "49f98b9c166a848faa534facd22be5300582e9c08422117911159acc4263f42f",
+      "assets": {
+        "cp/udtrcp.bin": {
+          "bytes": 880944,
+          "sha256": "d47a852e935204f135e0df8c4c2de3dff6f9d35a76ceacf078fee900f9ed4399"
+        }
+      }
+    },
+    "5034ae00f3ac8d15": {
+      "version": "3.00",
+      "bytes": 849447320,
+      "sha256": "365084e3e4a75e469055cc2efc826158eecfdb6724a35e896ef1a097e7cccb11",
+      "U_sha256": "7848e0019935c36a079b0417fc261337f23c890294280b03f715dca29c543d62",
+      "assets": {
+        "cp/udtrcp.bin": {
+          "bytes": 880944,
+          "sha256": "3dfc22ebb8976fb50c4f43d35364b44ba1741a7ecb3da535995424688eee337d"
+        }
+      }
+    }
+  }
+}

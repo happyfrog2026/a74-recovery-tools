@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'">
+  <title>Camera Recovery</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="app-header"><strong>ILCE-7M4 恢复工具 <span id="appVersion"></span></strong><button id="languageButton">Language / 语言</button></header>
+      <nav aria-label="任务">
+        <button class="nav active" data-page="board">准备 Multi 转接头</button>
+        <button class="nav" data-page="prepareCamera">准备相机</button>
+        <button class="nav" data-page="connection">检查连接</button>
+        <button class="nav" data-page="stock">从 SD 卡恢复原厂</button>
+        <button class="nav" data-page="backup">备份相机</button>
+        <button class="nav" data-page="restore">恢复已保存状态</button>
+      </nav>    <main>
+      <h1 id="pageTitle" hidden>准备 Multi 转接头</h1><span id="platformNotice" hidden></span>
+      <section class="page active" id="board">
+        <div class="card"><h2>使用前准备</h2><img class="wiring" data-artwork="compact-prep" src="artwork/compact-prep.png" alt="只将 USB 1 RP2040 接到电脑，Multi 和 USB 2 暂不连接"><p>只把 RP2040 的 USB 1 接到电脑，先点击“检查转接头”。</p>
+          <div class="actions"><button class="primary" id="checkBoard">检查转接头</button><button id="installBoard" disabled hidden>安装配套程序</button></div>
+          <p id="bootSteps" hidden>请断开 RP2040（USB 1）与电脑的连接，按住 RP2040 上的 BOOT 键，再将 USB 1 接回电脑。接好后松开 BOOT 键，然后点击“检查转接头”。</p><p class="result" id="boardResult">尚未检查。</p></div>
+      </section>
+
+      <section class="page" id="prepareCamera">
+        <div class="card"><h2>准备相机</h2><p>建议将相机设为连接电脑时自动进入 MSC。</p><p>MENU → 设置 → USB → USB连接模式 → 海量存储器（MSC）</p><button class="primary" id="cameraReady">我已准备好</button></div>
+      </section>
+      <section class="page" id="connection">
+        <div class="card"><h2>连接示意图</h2><img class="wiring" data-artwork="compact-full" src="artwork/compact-full.png" alt="Multi 接相机，USB 1 和 USB 2 接电脑"><p>先将 Multi 插头接相机、USB 1 和 USB 2 的 USB-C 插头接电脑；再打开相机，立即点击“检查连接”进入临时恢复模式并读取 USB 2。</p>
+          <div class="actions"><button class="primary" id="checkConnection">检查连接</button><button id="probeControl" hidden>只检查转接头</button></div>
+          <p class="result" id="connectionResult">尚未检查。</p>
+          <div id="fastbootDriver" hidden>
+            <p id="fastbootDriverStatus"></p>
+            <p>在 Zadig 中打开 Device → Load Preset Device，载入 A7M4-Fastboot.cfg。确认设备为 18D1:4EE0、驱动为 WinUSB 后安装。</p>
+            <div class="actions"><button id="openFastbootDriver">安装 WinUSB 驱动</button><button id="recheckFastboot">只读复查</button></div>
+          </div>
+          <div class="actions"><button id="removeFastbootWinUsb">卸载USB驱动</button></div>
+          <p class="result" id="fastbootRemovalResult" aria-live="polite" hidden></p>
+        </div>
+      </section>
+
+      <section class="page" id="stock"><div class="card"><h2>从 SD 卡恢复原厂系统</h2>
+        <div id="sdEntry">
+          <label>相机型号 <select id="sdModel"></select></label>
+          <div class="sd-downloads">
+            <button id="downloadFirmware">去下载固件包</button>
+            <button id="moreFirmwareDownloads">更多下载链接 🔗</button>
+          </div>
+          <h3>机内 SD 更新引导</h3>
+          <p>相机能进入菜单时，请在机内启动官方更新。</p>
+          <button id="officialPrepare">准备存储卡，在相机菜单更新</button>
+          <button id="officialReady">已准备好存储卡，查看机内更新步骤</button>
+          <div id="adapterRecovery">
+            <hr>
+            <h3 id="adapterRecoveryTitle">A7 IV 引导恢复</h3>
+            <p id="adapterRecoveryDescription">无法进入菜单时，A7 IV 可使用 Multi 转接头启动恢复。</p>
+            <details id="sdUsageTips">
+              <summary>使用提示</summary>
+              <p>改过固件的相机，直接从 SD 卡恢复旧版本可能会失败。如果目的是让相机恢复正常，建议优先使用同一台相机的正常全量备份。</p>
+              <p>如果确实需要回退旧版本，但第一次失败：</p>
+              <ol>
+                <li>用全量备份或 SD 卡引导恢复到能正常开机、进入菜单的版本。</li>
+                <li>在相机上选择「设置 → 重置/保存设置 → 出厂重置 → 初始化」。</li>
+                <li>初始化完成后，再用目标版本的固件包重试 SD 卡引导恢复。</li>
+              </ol>
+            </details>
+            <button class="primary" id="preparedCard">我已放入相机卡槽 1</button>
+            <button id="helpCard">帮我放进存储卡</button>
+          </div>
+          <p id="sdUnsupported" hidden>此机型的转接头恢复尚不支持。</p>
+        </div>
+        <div id="sdHelper" hidden><div id="sdSource"><p>选择要放入存储卡的 DAT 文件</p><p class="selection" id="datPath">尚未选择 DAT。</p><button id="chooseDAT">选择 DAT 文件</button><button id="chooseCard">选择电脑挂载的存储卡</button><button id="cameraCard">选择相机挂载的存储卡</button></div>
+        <div id="sdTarget" hidden><p id="targetDAT"></p><p class="selection" id="cardPath">尚未选择存储卡。</p><button id="changeCard">更换目标存储卡…</button><label id="cameraCardConfirmation" hidden><input id="cameraVolumeConfirmed" type="checkbox">我确认所选路径是相机的存储卡</label><p>写入前会校验所选 DAT 的复制完整性；不会格式化存储卡。</p><button class="primary" id="copyDAT">写入存储卡</button></div><p class="result" id="sdResult"></p></div>
+        <div id="officialInstructions" hidden><h3>在相机上更新</h3><p id="officialText"></p><button id="officialRequirements">查看 Sony 针对当前版本的升级要求</button></div>
+        <div id="sdSlot" hidden><p id="sdCopyProof"></p><p>复制完整不代表所选固件适用于相机恢复。</p><button class="primary" id="confirmSlot">已插入卡槽 1，继续</button></div>
+        <div id="stockReady" hidden><div id="stockChecks"><label><input type="checkbox" id="stockModel"><span id="stockModelLabel">我确认相机是 A7M4（ILCE-7M4）</span></label><label><input type="checkbox" id="stockPower">相机电量充足，电脑保持唤醒</label><input type="checkbox" id="stockCard" hidden><p id="stockAdapterState">请先检查 Multi 转接头</p><button id="stockControl">只检查 Multi 转接头</button><button class="primary" id="startStock">开始引导恢复</button><button id="runStock" hidden>确认风险并开始恢复</button></div><p class="result" id="stockResult">尚未开始。</p><p id="stockTimer" class="timer"></p><div id="stockOutcome" class="outcome" hidden><p id="stockWaitInstructions" hidden>请等待相机更新，预计约 7 分钟。更新期间请保持供电，不要操作相机、拔线或取出存储卡。以相机屏幕显示“更新完成”为准。</p><button id="completeStock">相机已显示更新完成，继续</button><button id="priorComplete">上次已显示更新完成</button><button id="priorNoCard">上次未插卡，更新已失败或停止</button><button id="priorBlink">相机持续 5 长 6 短闪灯，更新已失败</button></div></div>
+        <button id="sdBack" hidden>返回</button>
+      </div></section>
+
+      <section class="page" id="backup">
+        <div class="card"><h2>备份相机</h2><p>备份进度按本机实测时间估算，验证完成后显示 100%。</p><p>继续已有备份时，请选择原备份任务目录。</p>
+          <div class="actions"><button id="chooseBackup">选择保存位置</button><button id="chooseBackupJob" hidden>选择已有备份任务</button></div><p id="recentBackup"></p><p class="selection" id="backupPath">尚未选择保存位置。</p>
+          <label><input type="checkbox" id="backupPower">相机电量充足，电脑保持唤醒</label><label><input type="checkbox" id="backupSpace"> 保存位置有足够空间</label>
+          <div class="actions"><button id="backupControl">只检查转接头</button><button class="primary" id="startBackup">开始备份</button></div>
+          <p id="backupTimer" class="timer"></p><progress id="backupProgress" max="1" value="0" hidden></progress><p class="result" id="backupResult">尚未开始。</p>
+          <div id="backupRecovery" class="outcome" hidden>
+            <p>已保存的 eMMC 内容发生变化，原备份已保留。重采需要相机已经处于 Fastboot。</p>
+            <div class="actions"><button id="backupRecapture">只读重采 eMMC</button><button id="backupArchive" hidden>生成跨会话归档</button><button id="backupArchiveVerify" hidden>离线复核归档</button></div>
+            <div id="backupSupplement" hidden>
+              <label for="backupMissingRegion">缺少的区域</label><select id="backupMissingRegion"></select>
+              <button id="backupCaptureMissing">只读补采</button>
+            </div>
+            <p id="backupRecoveryResult" class="result" aria-live="polite"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="restore">
+        <div class="card"><h2>恢复已保存状态</h2><p>选择含 verified.json 的 snapshot 文件夹，也可选择其上一级完整备份任务目录。工具会先核验备份，再检查可恢复范围。</p>
+          <div class="actions"><button id="chooseRestore">选择备份</button></div><p class="selection" id="restorePath">尚未选择备份。</p>
+          <label><input type="checkbox" id="restorePower">相机电量充足，电脑保持唤醒</label>
+          <div class="actions"><button id="restoreControl">只检查转接头</button><button class="primary" id="startRestore">开始恢复</button></div>
+          <div id="restoreStage" class="restore-stage" role="status" hidden>
+            <span class="spinner" aria-hidden="true"></span><span id="restoreStageText"></span>
+          </div>
+          <div id="restoreVerify" hidden>
+            <p id="restoreBytes"></p><progress id="restoreVerifyBar" max="1" value="0" aria-labelledby="restoreBytes"></progress>
+          </div>
+          <div id="restoreWrite" hidden>
+            <p id="restoreFragments"></p><progress id="restoreWriteBar" max="1" value="0" aria-labelledby="restoreFragments"></progress>
+          </div>
+          <p id="restoreTimer" class="timer"></p><p id="norTimer"></p><p class="result" id="restoreResult">尚未开始。</p></div>
+      </section>
+
+      <div id="status" class="status" role="status"><span class="dot"></span><span id="statusText">等待操作</span></div>
+      <progress id="progress" max="1" value="0" hidden></progress>
+
+      <button id="exportLogs">导出日志</button><details class="logs"><summary>运行日志</summary><label><input type="checkbox" id="followLogs" checked>跟随最新日志</label><pre id="logText"></pre></details>
+    </main>
+  </div>
+  <div id="languageChooser" class="language-chooser" hidden><div class="language-dialog"><h2>Choose a language / 选择语言</h2><p>The interface language can be changed later. / 稍后可以更改界面语言。</p><div class="actions"><button id="selectEnglish" class="primary">English</button><button id="selectChinese">简体中文</button></div></div></div>
+  <script src="i18n.js"></script>
+  <script src="renderer.js"></script>
+  <script src="backup.js"></script>
+</body>
+</html>

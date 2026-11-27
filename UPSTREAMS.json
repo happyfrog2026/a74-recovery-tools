@@ -1,0 +1,66 @@
+{
+  "baseline": "0.1.52",
+  "upstreams": [
+    {
+      "name": "RAM recovery and RP2040 support",
+      "url": "https://github.com/DavidBuchanan314/ILCE-7M4-RE.git",
+      "revision": "e85e137fc3b88b7cb26e69faa9f1304184678ff7",
+      "path": "ILCE-7M4-RE",
+      "integration": "git-submodule",
+      "notices": [
+        "ILCE-7M4-RE/LICENSE",
+        "ILCE-7M4-RE/payloads/fastboot/LICENSE",
+        "ILCE-7M4-RE/bootrom/LICENSE",
+        "ILCE-7M4-RE/emmc_boot/LICENSE"
+      ],
+      "build_toolchain": {
+        "fastboot": "Arm GNU Toolchain 14.2.Rel1 (GCC 14.2.1 20241119)",
+        "rp2040": {
+          "arduino_cli": "1.4.1",
+          "arduino_pico": "6.3.2",
+          "pqt_tools": "5.0.0-9576866",
+          "fqbn": "rp2040:rp2040:waveshare_rp2040_zero",
+          "define": "OPEN_DRAIN"
+        },
+        "reproducibility": "UF2 build paths embedded in assertions require compiler prefix normalization for identical hashes."
+      }
+    },
+    {
+      "name": "Host firmware and FAT parsing adaptation",
+      "url": "https://github.com/Erlla/sony-a7m4-custom-firmware.git",
+      "revision": "79c3663b1ac4fda98047c2c4f5769b9d60d25920",
+      "integration": "adapted-host-source",
+      "license": "MIT",
+      "notice": "third_party/licenses/host-toolkit-LICENSE"
+    },
+    {
+      "name": "PySquashfsImage",
+      "version": "0.9.0",
+      "url": "https://pypi.org/project/PySquashfsImage/0.9.0/",
+      "integration": "pinned-python-dependency-and-source-copy",
+      "notice": "third_party/vendor/PySquashfsImage-0.9.0/LICENSE.LGPL"
+    }
+  ],
+  "runtime_prerequisites": {
+    "ILCE-7M4-RE/tools/uart_boot/build/uart_boot.ino.uf2": {
+      "bytes": 153088,
+      "sha256": "f486230d8e527b5791cef127b823640f8cf011986918c92f23bd56575dd86bfe",
+      "use": "Generated locally from the pinned upstream source; build output is ignored."
+    },
+    "ILCE-7M4-RE/payloads/fastboot/build/fastboot.bin": {
+      "bytes": 41004,
+      "sha256": "7eb58b1e6957c848c54cfaeb42dd12f7bd42ca1db74e628d579b966519c0015a",
+      "use": "Generated locally from the pinned upstream source; build output is ignored."
+    },
+    "ILCE-7M4-RE/bootrom/CXD90057_Mira_0xFFFF0000.bin": {
+      "bytes": 49152,
+      "sha256": "f93eaef410a47ec65f3487cd1edf63e1982df77163f3461206118ba5d6ee3fc3",
+      "use": "Tracked by the pinned upstream submodule; not duplicated by this project."
+    },
+    "ILCE-7M4-RE/emmc_boot/esram_0xfe040000.bin": {
+      "bytes": 190464,
+      "sha256": "2e37d90bc8f489db13a0319a3e7f8f1e746921c380484147b922957af3e95d74",
+      "use": "Tracked by the pinned upstream submodule; not duplicated by this project."
+    }
+  }
+}

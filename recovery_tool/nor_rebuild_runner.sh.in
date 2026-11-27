@@ -1,0 +1,313 @@
+#!/bin/sh
+# Separate Sony rebuild job. No host protocol, no automatic reset or replay.
+PATH=/norq/bin:/sbin:/bin:/usr/bin
+LD_LIBRARY_PATH=/lib:/usr/lib
+export PATH LD_LIBRARY_PATH
+. /norq/job.conf
+WORK=/tmp_updater
+P1=$WORK/norw_p1
+BOX=$P1/NORW.DAT
+STATE=ENTERED
+ERROR=none
+ARRAY_STARTED=false
+ARRAY_VERIFIED=false
+COMPANION_VERIFIED=false
+COMPANION_STARTED=false
+INFLIGHT=false
+OP=0
+RECORDS=0
+FLASH_TYPE=-1
+LAST_STATUS=0
+LAST_COMMAND=none
+FAILED_FROM=none
+COMPONENT=none
+INPUT_BYTES=0
+INPUT_MD5=none
+ADDRESS=0
+BUS_MODE=-1
+ERASE_TYPE=0
+ERASE_START=0
+ERASE_COUNT=0
+GEN_MD5=none
+HEADER_MD5=none
+BACKUP_MD5=none
+TRAIN_MD5=none
+BACKUP_BYTES=0
+EXIT_TRIGGER_VERIFIED=false
+EXIT_DIGEST_LINES=
+park() { while true; do sleep 60; done; }
+mkdir -p "$P1" || park
+mount -t vfat -o rw,sync,noatime,nodiratime /dev/nflasha1 "$P1" || park
+test "$(wc -c < "$BOX")" -eq 1048576 || park
+dd if="$BOX" of="$WORK/old-header" bs=4096 count=1 2>/dev/null || park
+grep -qx 'schema=sony-nor-rebuild-v1' "$WORK/old-header" || park
+grep -qx "job_id=$JOB_ID" "$WORK/old-header" || park
+grep -qx 'state=PREPARED' "$WORK/old-header" || park
+write_at() (
+    test -f "$2" || exit 1
+    exec 3<>"$2" || exit 1
+    dd if="$1" bs=512 seek="$3" count="$4" >&3
+)
+hash_file() { HASH=$(md5sum "$1") || park; HASH=${HASH%% *}; }
+record() {
+    dd if=/dev/zero of="$WORK/header" bs=4096 count=1 2>/dev/null || park
+    LOG_TRUNCATED=false
+    if test -f "$WORK/native.log" && test "$(wc -c < "$WORK/native.log")" -gt 262144; then LOG_TRUNCATED=true; fi
+    { echo 'schema=sony-nor-rebuild-v1'; echo "job_id=$JOB_ID"; echo "state=$STATE";
+      echo "error=$ERROR"; echo "failed_from=$FAILED_FROM"; echo "array_started=$ARRAY_STARTED";
+      echo "array_verified=$ARRAY_VERIFIED"; echo "companion_started=$COMPANION_STARTED";
+      echo "companion_verified=$COMPANION_VERIFIED"; echo "inflight=$INFLIGHT";
+      echo "operation=$OP"; echo "ledger_records=$RECORDS"; echo "flash_type=$FLASH_TYPE";
+      echo "native_command=$LAST_COMMAND"; echo "native_exit_status=$LAST_STATUS";
+      echo "companion_bytes=$COMPANION_BYTES"; echo "companion_md5=$GEN_MD5";
+      echo "header_md5=$HEADER_MD5"; echo "loader_backup_bytes=$BACKUP_BYTES";
+      echo "loader_backup_md5=$BACKUP_MD5"; echo "training_bytes=$TRAIN_BYTES";
+      echo "training_md5=$TRAIN_MD5"; echo "native_log_truncated=$LOG_TRUNCATED";
+      echo "exit_trigger_verified=$EXIT_TRIGGER_VERIFIED";
+      echo "$EXIT_DIGEST_LINES";
+    } > "$WORK/header-text"
+    test "$(wc -c < "$WORK/header-text")" -le 4096 || park
+    write_at "$WORK/header-text" "$WORK/header" 0 8 2>/dev/null || park
+    write_at "$WORK/header" "$BOX" 0 8 2>/dev/null || park
+    if test -f "$WORK/native.log"; then
+        write_at "$WORK/native.log" "$BOX" 1312 512 2>/dev/null || park
+    fi
+    sync || park
+}
+event() {
+    test "$RECORDS" -lt 256 || park
+    { echo "job_id=$JOB_ID"; echo "operation=$OP"; echo "event=$1";
+      echo "kind=$KIND"; echo "command=$LAST_COMMAND"; echo "status=$2";
+      echo "component=$COMPONENT"; echo "input_bytes=$INPUT_BYTES"; echo "input_md5=$INPUT_MD5";
+      echo "address=$ADDRESS"; echo "bus_mode=$BUS_MODE";
+      echo "erase_type=$ERASE_TYPE"; echo "erase_start=$ERASE_START"; echo "erase_count=$ERASE_COUNT";
+    } > "$WORK/event-text"
+    hash_file "$WORK/event-text"
+    { echo "payload_md5=$HASH"; echo "commit=$JOB_ID"; } >> "$WORK/event-text"
+    test "$(wc -c < "$WORK/event-text")" -le 512 || park
+    dd if=/dev/zero of="$WORK/event" bs=512 count=1 2>/dev/null || park
+    write_at "$WORK/event-text" "$WORK/event" 0 1 2>/dev/null || park
+    write_at "$WORK/event" "$BOX" "$((8+RECORDS))" 1 2>/dev/null || park
+    RECORDS=$((RECORDS+1))
+    sync || park
+}
+terminal() {
+    record
+    sync || park
+    umount "$P1" || park
+    park
+}
+fail() {
+    ERROR=$1; FAILED_FROM=$STATE
+    if test "$ARRAY_STARTED" = false; then STATE=FAILED_BEFORE_ARRAY_WRITE
+    elif test "$INFLIGHT" = true; then STATE=ARRAY_WRITE_OUTCOME_UNKNOWN
+    elif test "$COMPANION_VERIFIED" = true; then STATE=EXIT_FAILED
+    elif test "$ARRAY_VERIFIED" = true; then STATE=COMPANION_FAILED
+    else STATE=ARRAY_WRITE_FAILED
+    fi
+    terminal
+}
+invoke() {
+    KIND=$1; ACCEPT=$2; shift 2
+    OP=$((OP+1)); LAST_COMMAND="$*"; LAST_STATUS=pending
+    if test "$KIND" = array; then ARRAY_STARTED=true; INFLIGHT=true; fi
+    if test "$KIND" = companion; then COMPANION_STARTED=true; fi
+    event intent pending
+    record
+    "$@" > "$WORK/command.out" 2>> "$WORK/native.log"
+    LAST_STATUS=$?
+    cat "$WORK/command.out" >> "$WORK/native.log" || park
+    event result "$LAST_STATUS"
+    case "$ACCEPT:$LAST_STATUS" in zero:0|flash:0|flash:1|lsi:3|boot_device:1) ;;
+        *) fail "native_command_failed:$1" ;;
+    esac
+    INFLIGHT=false
+    record
+}
+require_size() { test "$(wc -c < "$1")" -eq "$2" || fail "unexpected_size:$1"; }
+blob() {
+    test "$(wc -c < "$1")" -le "$3" || fail "evidence_capacity:$1"
+    write_at "$1" "$BOX" "$2" "$((($3+511)/512))" 2>/dev/null || park
+    sync || park
+}
+component() {
+    COMPONENT=$1; INPUT_BYTES=$(wc -c < "$2"); hash_file "$2"; INPUT_MD5=$HASH; ADDRESS=$3
+    case "$COMPONENT" in
+        header) EXPECTED_MD5=$HEADER_MD5 ;; dgu) EXPECTED_MD5=$DGU_MD5 ;;
+        loader_backup) EXPECTED_MD5=$BACKUP_MD5 ;; loader) EXPECTED_MD5=$LOADER_MD5 ;;
+        mis) EXPECTED_MD5=$MIS_MD5 ;; training) EXPECTED_MD5=$TRAIN_MD5 ;;
+        phy) EXPECTED_MD5=$PHY_MD5 ;; cpapp) EXPECTED_MD5=$CPAPP_MD5 ;; *) fail unknown_component ;;
+    esac
+    test "$INPUT_MD5" = "$EXPECTED_MD5" || fail "staged_component_digest_mismatch:$COMPONENT"
+    ERASE_TYPE=0; ERASE_START=0; ERASE_COUNT=0
+}
+erase() {
+    ERASE_TYPE=$1; ERASE_START=$2; ERASE_COUNT=$3
+    invoke array zero ud_cp_firmup.elf -e "$1" -a "$2" -s "$3"
+}
+program() {
+    ERASE_TYPE=0; ERASE_START=0; ERASE_COUNT=0
+    invoke array zero ud_cp_firmup.elf "$1" "$2" -a "$3"
+}
+octal() {
+    invoke query flash ud_cp_firmup.elf -i
+    test "$LAST_STATUS" -eq "$FLASH_TYPE" || fail flash_type_changed
+    invoke ordinary zero ud_cp_firmup.elf -m 1
+    BUS_MODE=1
+    invoke ordinary zero ud_cp_firmup.elf -d 0
+}
+record
+test -c /dev/mem || fail missing_dev_mem
+test -c /dev/pcidma || fail missing_dev_pcidma
+grep -q ' /tmp_updater tmpfs ' /proc/mounts || fail missing_canonical_tmpfs
+invoke ordinary zero umount /setting
+invoke ordinary zero mount -t vfat -o ro,noatime,nodiratime /dev/nflasha8 /cp
+invoke ordinary zero mount -t vfat -o ro,noatime,nodiratime /dev/nflasha2 /setting
+invoke ordinary zero md5sum -c /norq/source-files.md5
+invoke ordinary zero mkdir -p "$WORK/nor_loader" /tmp_updater/updater/bodyfs/cp
+invoke ordinary zero cp /cp/DGU.bin /cp/MIS.bin /cp/loader_spi.bin /cp/cpapp-b.bin /cp/pcie_phy_fw.bin "$WORK/nor_loader/"
+invoke ordinary zero cp /setting/Backup.bin "$WORK/nor_loader/Backup.bin"
+invoke ordinary zero umount /cp
+invoke ordinary zero umount /setting
+invoke ordinary zero cp /norq/cp/tomco.txt /norq/cp/udtrcp.bin /tmp_updater/updater/bodyfs/cp/
+cd "$WORK/nor_loader" || fail chdir_failed
+invoke ordinary zero tar xf /norq/loader_nor.tar
+invoke ordinary zero md5sum -c /norq/staged-files.md5
+invoke ordinary zero bksb.elf Backup.bin LdrBkupList.txt -c LdrBkup.bin
+BACKUP_BYTES=$(wc -c < LdrBkup.bin)
+test "$BACKUP_BYTES" -gt 0 && test "$BACKUP_BYTES" -le 2048 || fail invalid_loader_backup_size
+hash_file LdrBkup.bin; BACKUP_MD5=$HASH
+blob LdrBkup.bin 1296 4096
+invoke ordinary zero ud_nor_pformat.elf
+require_size nor_ldr.img "$COMPANION_BYTES"
+STATE=IMAGE_PREPARED; record
+invoke query lsi ud_read_lsi_type.elf
+invoke query zero ud_get_boot_ext.elf
+invoke query boot_device ud_get_boot_device.elf
+STATE=CP_BOOT_STARTED; record
+invoke ordinary zero ud_spicom_boot.elf -c
+invoke ordinary zero ud_init_spi_port_setting.elf 0
+invoke ordinary zero spicom.elf d 0xfe040000 "$WORK/nor_loader/nor_ldr.img"
+invoke ordinary zero spicom.elf d 0xFE049000 "$WORK/nor_loader/loader_spi.bin"
+invoke ordinary zero spicom.elf e 0xFE049000
+invoke ordinary zero ud_cp_firmup.elf -l
+invoke ordinary zero insmod /usr/kmod/pci_ep_cp.ko
+invoke ordinary zero ud_cp_firmup.elf -c
+invoke ordinary zero ud_cp_firmup.elf -u /tmp_updater/updater/bodyfs/cp/tomco.txt -a 0x100000
+invoke ordinary zero ud_cp_firmup.elf -u /tmp_updater/updater/bodyfs/cp/udtrcp.bin -a 0x108000
+invoke ordinary zero ud_cp_firmup.elf -u "$WORK/nor_loader/Backup.bin" -a 0x4000000
+invoke ordinary zero ud_cp_firmup.elf -j
+STATE=CP_READY; record
+invoke ordinary zero ud_get_data_from_mis.elf MIS.bin 0 t_add
+test "$(cat "$WORK/command.out")" = 0x00000200 || fail invalid_training_offset
+invoke ordinary zero ud_get_data_from_mis.elf MIS.bin 0 t_len
+test "$(cat "$WORK/command.out")" = 0x00000600 || fail invalid_training_length
+invoke ordinary zero ud_cp_firmup.elf -t /tmp_updater/ddrtraining.dat -a 0x3e210fc -s "$TRAIN_BYTES"
+require_size /tmp_updater/ddrtraining.dat "$TRAIN_BYTES"
+hash_file /tmp_updater/ddrtraining.dat; TRAIN_MD5=$HASH
+blob /tmp_updater/ddrtraining.dat 1304 4096
+invoke query flash ud_cp_firmup.elf -i
+FLASH_TYPE=$LAST_STATUS
+invoke ordinary zero ud_nor_pformat.elf -f "$FLASH_TYPE"
+require_size nor_ldr.img "$COMPANION_BYTES"
+invoke ordinary zero ud_cp_firmup.elf -m 0
+BUS_MODE=0
+invoke ordinary zero dd if=./nor_ldr.img of=./infomisc.dat bs=512 count=4
+require_size infomisc.dat 2048
+require_size DGU.bin "$DGU_BYTES"
+require_size MIS.bin "$MIS_BYTES"
+require_size loader_nor.bin "$LOADER_BYTES"
+require_size pcie_phy_fw.bin "$PHY_BYTES"
+require_size cpapp-b.bin "$CPAPP_BYTES"
+hash_file nor_ldr.img; GEN_MD5=$HASH
+blob nor_ldr.img 264 524288
+hash_file infomisc.dat; HEADER_MD5=$HASH
+blob infomisc.dat 1288 4096
+STATE=GENERATED_EVIDENCE_PERSISTED; record
+invoke ordinary zero md5sum -c /norq/staged-files.md5
+STATE=ARRAY_WRITE_STARTED; record
+component header infomisc.dat 0
+erase 2 0 9
+program -f ./infomisc.dat 0
+component dgu DGU.bin 2048
+program -y ./DGU.bin 2048
+component loader_backup LdrBkup.bin 34816
+program -y ./LdrBkup.bin 34816
+component loader loader_nor.bin 36864
+erase 2 9 26
+program -y ./loader_nor.bin 36864
+component mis MIS.bin 262144
+octal
+erase 2 64 33
+program -f ./MIS.bin 262144
+component training /tmp_updater/ddrtraining.dat "$((262144+TRAIN_OFFSET))"
+program -f /tmp_updater/ddrtraining.dat "$((262144+TRAIN_OFFSET))"
+component phy pcie_phy_fw.bin 393216
+octal
+erase 2 96 5
+program -f ./pcie_phy_fw.bin 393216
+component cpapp cpapp-b.bin 2097152
+octal
+erase 3 32 "$CPAPP_BLOCK_COUNT"
+program -f ./cpapp-b.bin 2097152
+ARRAY_VERIFIED=true
+STATE=ARRAY_WRITE_VERIFIED; record
+# This changes only the generated RAM image, as in Sony update_ddrtraining().
+invoke ordinary zero ud_nor_pformat.elf -m /tmp_updater/ddrtraining.dat "$((262144+TRAIN_OFFSET))"
+require_size nor_ldr.img "$COMPANION_BYTES"
+hash_file nor_ldr.img; GEN_MD5=$HASH
+blob nor_ldr.img 264 524288
+STATE=COMPANION_WRITE_STARTED; record
+COMPONENT=companion; INPUT_BYTES=$COMPANION_BYTES; INPUT_MD5=$GEN_MD5; ADDRESS=0
+invoke companion zero mount -t vfat -o rw,sync,noatime,nodiratime /dev/nflasha8 /cp
+invoke companion zero cp ./nor_ldr.img /cp/nor_ldr.img
+invoke companion zero sync
+invoke companion zero umount /cp
+invoke companion zero mount -t vfat -o ro,noatime,nodiratime /dev/nflasha8 /cp
+require_size /cp/nor_ldr.img "$COMPANION_BYTES"
+invoke companion zero md5sum /cp/nor_ldr.img
+HASH=$(cat "$WORK/command.out"); HASH=${HASH%% *}
+test "$HASH" = "$GEN_MD5" || fail companion_persisted_digest_mismatch
+invoke companion zero umount /cp
+COMPANION_VERIFIED=true
+STATE=COMPANION_VERIFIED; record
+# MODE/MODE1 are restored only after all actual NOR and companion results.
+# The block device is unmounted; each small original sector has an exact preimage.
+write_trigger() (
+    test -f "$1" && test -e /dev/nflasha2 || exit 1
+    exec 3<>/dev/nflasha2 || exit 1
+    dd if="$1" bs=512 seek="$2" count=1 >&3
+)
+restore_trigger() {
+    COMPONENT=exit_trigger; INPUT_BYTES=512; INPUT_MD5=$4; ADDRESS=$(($1*512))
+    ERASE_TYPE=0; ERASE_START=0; ERASE_COUNT=0
+    hash_file "$2"; test "$HASH" = "$4" || fail invalid_exit_sector_input
+    invoke exit zero dd if=/dev/nflasha2 of="$WORK/p2-pre-$1.bin" bs=512 skip="$1" count=1
+    require_size "$WORK/p2-pre-$1.bin" 512
+    hash_file "$WORK/p2-pre-$1.bin"; test "$HASH" = "$3" || fail exit_trigger_preimage_mismatch
+    EXIT_DIGEST_LINES="${EXIT_DIGEST_LINES}
+exit_${1}_pre_md5=$HASH"
+    invoke exit zero write_trigger "$2" "$1"
+    invoke exit zero sync
+    invoke exit zero dd if=/dev/nflasha2 of="$WORK/p2-post-$1.bin" bs=512 skip="$1" count=1
+    require_size "$WORK/p2-post-$1.bin" 512
+    hash_file "$WORK/p2-post-$1.bin"; test "$HASH" = "$4" || fail exit_trigger_readback_mismatch
+    EXIT_DIGEST_LINES="${EXIT_DIGEST_LINES}
+exit_${1}_post_md5=$HASH"
+}
+STATE=EXIT_TRIGGER_RESTORE; record
+. /norq/exit-trigger.sh
+EXIT_TRIGGER_VERIFIED=true
+STATE=EXIT_TRIGGER_VERIFIED; record
+COMPONENT=normal_reboot; INPUT_BYTES=0; INPUT_MD5=none; ADDRESS=0
+invoke exit zero ud_pd_firmup.elf b
+STATE=NATIVE_REBOOT_INTENT
+OP=$((OP+1)); KIND=exit; LAST_COMMAND=ud_reboot.elf; LAST_STATUS=pending
+# Reboot can terminate this process before returning; this final intent is
+# deliberately pending. Host must observe a new ordinary Sony USB endpoint.
+event intent pending
+record
+sync || park
+umount "$P1" || park
+ud_reboot.elf >> "$WORK/native.log" 2>&1
+park

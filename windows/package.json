@@ -1,0 +1,14 @@
+{
+  "name": "camera-recovery-windows",
+  "private": true,
+  "version": "0.1.52",
+  "description": "Camera Recovery Windows desktop frontend",
+  "main": "app/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  }
+}

@@ -1,0 +1,133 @@
+#!/bin/sh
+# Standalone p1 qualification: CP setup and bounded reads, NO NOR array writes.
+# This is launched as PID1 by the temporary init. Never fall through to updater.
+PATH=/norq/bin:/sbin:/bin:/usr/bin
+LD_LIBRARY_PATH=/lib:/usr/lib
+export PATH LD_LIBRARY_PATH
+. /norq/job.conf
+# Stock /ramdsk is a symlink to /tmp_updater. Use the canonical 260 MiB
+# tmpfs directly; binding a child over /tmp_updater would hide that child.
+WORK=/tmp_updater
+P1=$WORK/norq_p1
+BOX=$P1/NORQ.DAT
+STATE=ENTERED
+ERROR=none
+FLASH_TYPE=-1
+READS=0
+READ_LINES=
+LAST_COMMAND=none
+LAST_STATUS=0
+FAILED_FROM=none
+park() { while true; do sleep 60; done; }
+mkdir -p "$P1" "$WORK" || park
+mount -t vfat -o rw,sync,noatime,nodiratime /dev/nflasha1 "$P1" || park
+test "$(wc -c < "$BOX")" -eq 65536 || park
+# One-shot durable latch. Any consumed/failed/partial job parks without CP reset.
+dd if="$BOX" of="$WORK/old-header" bs=4096 count=1 2>/dev/null || park
+grep -qx "job_id=$JOB_ID" "$WORK/old-header" || park
+grep -qx 'state=PREPARED' "$WORK/old-header" || park
+# Stock BusyBox dd omits conv/notrunc. Open the existing file without truncation
+# in the shell; dd seeks/writes inherited stdout and never opens an output path.
+write_at() (
+    test -f "$2" || exit 1
+    exec 3<>"$2" || exit 1
+    dd if="$1" bs=4096 seek="$3" count="$4" >&3
+)
+record() {
+    dd if=/dev/zero of="$WORK/header" bs=4096 count=1 2>/dev/null || park
+    { echo 'schema=sony-nor-qualification-v1'; echo "job_id=$JOB_ID";
+      echo "state=$STATE"; echo "error=$ERROR"; echo "flash_type=$FLASH_TYPE";
+      echo 'nor_array_write_started=false'; echo "reads=$READS";
+      echo "failed_from=$FAILED_FROM"; echo "native_command=$LAST_COMMAND";
+      echo "native_exit_status=$LAST_STATUS";
+      echo "$READ_LINES"; } > "$WORK/header-text"
+    write_at "$WORK/header-text" "$WORK/header" 0 1 2>/dev/null || park
+    write_at "$WORK/header" "$BOX" 0 1 2>/dev/null || park
+    if test -f "$WORK/native.log"; then
+        write_at "$WORK/native.log" "$BOX" 8 8 2>/dev/null || park
+    fi
+    sync || park
+}
+fail() { ERROR=$1; FAILED_FROM=$STATE; STATE=FAILED; record; umount "$P1"; park; }
+query() {
+    LAST_COMMAND="$*"
+    "$@" >> "$WORK/native.log" 2>&1
+    LAST_STATUS=$?
+}
+run() {
+    query "$@"
+    test "$LAST_STATUS" -eq 0 || fail "native_command_failed:$1"
+}
+record
+# Stock init warns instead of stopping when initialization fails. Check explicitly.
+test -c /dev/mem || fail missing_dev_mem
+test -c /dev/pcidma || fail missing_dev_pcidma
+grep -q ' /tmp_updater tmpfs ' /proc/mounts || fail missing_ramdsk_tmpfs
+test -e /dev/nflasha2 || fail missing_p2
+test -e /dev/nflasha8 || fail missing_p8
+# insmod.sh has already mounted /setting and loaded backup.ko with Backup_save=0.
+run umount /setting
+run mkdir -p /cp /setting
+run mount -t vfat -o ro,noatime,nodiratime /dev/nflasha8 /cp
+run mount -t vfat -o ro,noatime,nodiratime /dev/nflasha2 /setting
+run md5sum -c /norq/source-files.md5
+run mkdir -p "$WORK/nor_loader"
+run cp /cp/DGU.bin /cp/MIS.bin /cp/loader_spi.bin /cp/cpapp-b.bin /cp/pcie_phy_fw.bin "$WORK/nor_loader/"
+run cp /setting/Backup.bin "$WORK/nor_loader/Backup.bin"
+run umount /cp
+run umount /setting
+# The fixed Sony reader output and bootstrap paths already live in this tmpfs.
+run mkdir -p /tmp_updater/updater/bodyfs/cp
+run cp /norq/cp/tomco.txt /norq/cp/udtrcp.bin /tmp_updater/updater/bodyfs/cp/
+cd "$WORK/nor_loader" || fail chdir_failed
+run tar xf /norq/loader_nor.tar
+run bksb.elf Backup.bin LdrBkupList.txt -c LdrBkup.bin
+run ud_nor_pformat.elf
+STATE=IMAGE_PREPARED; record
+# Query statuses encode values; do not use global set -e.
+query ud_read_lsi_type.elf; LSI=$LAST_STATUS
+test "$LSI" -eq 3 || fail wrong_lsi
+query ud_get_boot_ext.elf; BOOT_EXT=$LAST_STATUS
+test "$BOOT_EXT" -eq 0 || fail wrong_boot_ext
+query ud_get_boot_device.elf; BOOT_DEVICE=$LAST_STATUS
+test "$BOOT_DEVICE" -eq 1 || fail wrong_boot_device
+STATE=CP_BOOT_STARTED; record
+run ud_spicom_boot.elf -c
+run ud_init_spi_port_setting.elf 0
+run spicom.elf d 0xfe040000 "$WORK/nor_loader/nor_ldr.img"
+run spicom.elf d 0xFE049000 "$WORK/nor_loader/loader_spi.bin"
+run spicom.elf e 0xFE049000
+run ud_cp_firmup.elf -l
+run insmod /usr/kmod/pci_ep_cp.ko
+run ud_cp_firmup.elf -c
+run ud_cp_firmup.elf -u /tmp_updater/updater/bodyfs/cp/tomco.txt -a 0x100000
+run ud_cp_firmup.elf -u /tmp_updater/updater/bodyfs/cp/udtrcp.bin -a 0x108000
+run ud_cp_firmup.elf -u "$WORK/nor_loader/Backup.bin" -a 0x4000000
+run ud_cp_firmup.elf -j
+STATE=CP_READY; record
+query ud_cp_firmup.elf -i; FLASH_TYPE=$LAST_STATUS
+case "$FLASH_TYPE" in 0|1) ;; *) fail unknown_flash_type ;; esac
+run ud_nor_pformat.elf -f "$FLASH_TYPE"
+run ud_cp_firmup.elf -m 0
+STATE=READ_STARTED; record
+for ADDRESS in 0 262144 2097152 16777216 67104768; do
+    if test "$READS" -eq 1; then
+        run ud_cp_firmup.elf -m 1
+        run ud_cp_firmup.elf -d 0
+    fi
+    run rm -f /tmp_updater/nor.bin
+    run ud_cp_firmup.elf -r -a "$ADDRESS" -s 4096
+    test "$(wc -c < /tmp_updater/nor.bin)" -eq 4096 || fail short_nor_read
+    SLOT=$((READS+1))
+    run write_at /tmp_updater/nor.bin "$BOX" "$SLOT" 1
+    HASH=$(md5sum /tmp_updater/nor.bin); HASH=${HASH%% *}
+    READ_LINES="${READ_LINES}
+sample_${READS}_md5=$HASH"
+    READS=$((READS+1))
+    record
+done
+STATE=READ_COMPLETE; record
+run umount "$P1"
+# Existing LED tool signals that no command remains active; no timed reset/reboot.
+uc_portctl.elf -p 1 -n 0 >/dev/null 2>&1 &
+park
