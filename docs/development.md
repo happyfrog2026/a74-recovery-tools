@@ -22,11 +22,12 @@ Windows 上将上述 Python 路径替换为 `.venv\Scripts\python.exe`。Mac USB
 
 ## Offline checks / 离线检查
 
-Run from the project root.
+Run from the project root. Install resource-preparation dependencies as well to run the synthetic firmware-decoder tests.
 
-在项目根目录运行。
+在项目根目录运行。完整测试还需安装资源准备依赖，以运行合成固件解码测试。
 
 ```sh
+.venv/bin/python -m pip install -r requirements-resources.txt
 PYTHONPATH=tests:. .venv/bin/python -m unittest discover -s tests
 .venv/bin/python -m unittest discover -s windows/tests -p 'test_worker_utf8.py'
 node windows/tests/test_driver_maintenance.js
