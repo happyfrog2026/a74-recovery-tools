@@ -56,5 +56,3 @@ Initialize the pinned upstream dependency with `git submodule update --init --re
 ## License
 
 The software is provided free of charge for noncommercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE). Third-party components keep their original licenses and notices. See [third-party notices](THIRD_PARTY_NOTICES.md).
-
-(Desktop installer packaging is maintained locally. Firmware inputs and generated runtime resources are prepared separately as described in the resource guide.)
